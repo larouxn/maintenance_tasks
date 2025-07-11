@@ -40,17 +40,14 @@ module MaintenanceTasks
     # @raise [ActiveRecord::ValueTooLong] if the creation of the Run fails due
     #   to a value being too long for the column type.
     def run(name:, csv_file: nil, arguments: {}, run_model: Run, metadata: nil)
-      run = run_model.new(task_name: name, arguments: arguments, metadata: metadata)
-      if csv_file
-        run.csv_file.attach(csv_file)
-        run.csv_file.filename = filename(name)
+      task_class = Task.named(name)
+
+      # Check if task is configured for concurrent execution
+      if task_class.concurrent?
+        run_concurrent_task(name: name, csv_file: csv_file, arguments: arguments, metadata: metadata)
+      else
+        run_sequential_task(name: name, csv_file: csv_file, arguments: arguments, run_model: run_model, metadata: metadata)
       end
-      job = instantiate_job(run)
-      run.job_id = job.job_id
-      yield run if block_given?
-      run.enqueued!
-      enqueue(run, job)
-      Task.named(name)
     end
 
     # Resumes a Task.
@@ -64,13 +61,42 @@ module MaintenanceTasks
     #
     # @raise [EnqueuingError] if an error occurs while enqueuing the Run.
     def resume(run)
-      job = instantiate_job(run)
-      run.job_id = job.job_id
-      run.enqueued!
-      enqueue(run, job)
+      if run.parent_run?
+        # Resume concurrent task
+        task_class = Task.named(run.task_name)
+        concurrent_runner = ConcurrentRunner.new(task_class, task_class.concurrency_config)
+        concurrent_runner.resume(run)
+      else
+        # Resume sequential task
+        job = instantiate_job(run)
+        run.job_id = job.job_id
+        run.enqueued!
+        enqueue(run, job)
+      end
     end
 
     private
+
+    def run_concurrent_task(name:, csv_file:, arguments:, metadata:)
+      task_class = Task.named(name)
+      concurrent_runner = ConcurrentRunner.new(task_class, task_class.concurrency_config)
+      concurrent_runner.run(name: name, csv_file: csv_file, arguments: arguments, metadata: metadata)
+      task_class
+    end
+
+    def run_sequential_task(name:, csv_file:, arguments:, run_model:, metadata:)
+      run = run_model.new(task_name: name, arguments: arguments, metadata: metadata)
+      if csv_file
+        run.csv_file.attach(csv_file)
+        run.csv_file.filename = filename(name)
+      end
+      job = instantiate_job(run)
+      run.job_id = job.job_id
+      yield run if block_given?
+      run.enqueued!
+      enqueue(run, job)
+      Task.named(name)
+    end
 
     def enqueue(run, job)
       unless job.enqueue

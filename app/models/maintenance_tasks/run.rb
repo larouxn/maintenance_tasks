@@ -54,8 +54,14 @@ module MaintenanceTasks
       serialize :metadata, JSON
     end
 
+    # Associations for concurrent execution
+    belongs_to :parent_run, class_name: "MaintenanceTasks::Run", optional: true
+    has_many :child_runs, class_name: "MaintenanceTasks::Run", foreign_key: :parent_run_id, dependent: :destroy
+
     scope :active, -> { where(status: ACTIVE_STATUSES) }
     scope :completed, -> { where(status: COMPLETED_STATUSES) }
+    scope :parent_runs, -> { where(is_parent_run: true) }
+    scope :child_runs, -> { where(is_parent_run: false) }
 
     # Ensure ActiveStorage is in use before preloading the attachments
     scope :with_attached_csv, -> do
@@ -348,6 +354,50 @@ module MaintenanceTasks
     # @return [Boolean] whether the Run is stuck.
     def stuck?
       (cancelling? || pausing?) && updated_at <= MaintenanceTasks.stuck_task_duration.ago
+    end
+
+    # Returns whether this is a concurrent task run (parent or child)
+    #
+    # @return [Boolean]
+    def concurrent?
+      is_parent_run? || parent_run_id.present?
+    end
+
+    # Returns whether this is a parent run coordinating child runs
+    #
+    # @return [Boolean]
+    def parent_run?
+      is_parent_run?
+    end
+
+    # Returns whether this is a child run of a concurrent task
+    #
+    # @return [Boolean]
+    def child_run?
+      parent_run_id.present?
+    end
+
+    # For parent runs, calculates completion percentage based on child runs
+    # For child/regular runs, uses existing progress calculation
+    #
+    # @return [Float] completion percentage between 0.0 and 100.0
+    def completion_percentage
+      if parent_run?
+        calculate_parent_completion_percentage
+      else
+        # Existing logic for non-concurrent runs
+        return 0.0 unless tick_total&.positive?
+        (tick_count.to_f / tick_total * 100).round(2)
+      end
+    end
+
+    def calculate_parent_completion_percentage
+      return 0.0 unless child_runs.any?
+      
+      completed_children = child_runs.where(status: COMPLETED_STATUSES).count
+      total_children = child_runs.count
+      
+      (completed_children.to_f / total_children * 100).round(2)
     end
 
     # Performs validation on the task_name attribute.

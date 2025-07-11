@@ -29,6 +29,17 @@ module MaintenanceTasks
   #   @return [String] the name of the job class.
   mattr_accessor :job, default: "MaintenanceTasks::TaskJob"
 
+  # @!attribute concurrent_job
+  #   @scope class
+  #
+  #   The name of the job to be used to perform concurrent Tasks. Defaults to
+  #   `"MaintenanceTasks::ConcurrentTaskJob"`. This job must either be a class that
+  #   inherits from {ConcurrentTaskJob} or a class that inherits from {TaskJob} and
+  #   includes {ConcurrentTaskJobConcern}.
+  #
+  #   @return [String] the name of the concurrent job class.
+  mattr_accessor :concurrent_job, default: "MaintenanceTasks::ConcurrentTaskJob"
+
   # @!attribute ticker_delay
   #   @scope class
   #

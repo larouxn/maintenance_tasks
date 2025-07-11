@@ -30,7 +30,19 @@ module MaintenanceTasks
 
     private
 
-    def build_enumerator(_run, cursor:)
+    def build_enumerator(run, cursor:)
+      @run = arguments.first
+      @task = @run.task
+
+      # Use concurrent job concern for concurrent tasks
+      if @run.concurrent? && respond_to?(:build_concurrent_enumerator)
+        build_concurrent_enumerator(run, cursor: cursor)
+      else
+        build_sequential_enumerator(run, cursor: cursor)
+      end
+    end
+
+    def build_sequential_enumerator(run, cursor:)
       cursor ||= @run.cursor
       self.cursor_position = cursor
       enumerator_builder = self.enumerator_builder

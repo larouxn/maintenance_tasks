@@ -33,6 +33,10 @@ module MaintenanceTasks
     # @api private
     class_attribute :masked_arguments, default: []
 
+    # Configuration for concurrent execution
+    # @api private
+    class_attribute :concurrency_config, default: nil
+
     define_callbacks :start, :complete, :error, :cancel, :pause, :interrupt
 
     attr_accessor :metadata
@@ -134,6 +138,52 @@ module MaintenanceTasks
       # @return the count of items.
       def count
         new.count
+      end
+
+      # Configure concurrent execution for this task
+      #
+      # @param workers [Integer] number of concurrent workers (1-20)
+      # @param partition_strategy [Symbol] strategy for partitioning work
+      #   :id_range - partition by ID ranges (default for ActiveRecord collections)
+      #   :cursor_based - partition using cursor-based pagination
+      #   :custom - use task-defined partitioning logic
+      # @param fail_fast [Boolean] whether to stop all workers when one fails
+      #
+      # @example
+      #   class MyConcurrentTask < MaintenanceTasks::Task
+      #     concurrent workers: 4, partition_strategy: :id_range
+      #     
+      #     def collection
+      #       User.all
+      #     end
+      #     
+      #     def process(user)
+      #       # This will run concurrently across 4 workers
+      #       SomeSlowService.call(user)
+      #     end
+      #   end
+      def concurrent(workers:, partition_strategy: :id_range, fail_fast: false)
+        unless (1..20).include?(workers)
+          raise ArgumentError, "Workers must be between 1 and 20"
+        end
+        
+        valid_strategies = [:id_range, :cursor_based, :custom]
+        unless valid_strategies.include?(partition_strategy)
+          raise ArgumentError, "Invalid partition strategy. Must be one of: #{valid_strategies.join(', ')}"
+        end
+        
+        self.concurrency_config = {
+          workers: workers,
+          partition_strategy: partition_strategy,
+          fail_fast: fail_fast
+        }
+      end
+
+      # Returns whether this task is configured for concurrent execution
+      #
+      # @return [Boolean]
+      def concurrent?
+        !concurrency_config.nil?
       end
 
       # Add a condition under which this Task will be throttled.
@@ -308,6 +358,22 @@ module MaintenanceTasks
     # @return [Integer, nil]
     def count
       self.class.collection_builder_strategy.count(self)
+    end
+
+    # Returns whether this task is configured for concurrent execution
+    #
+    # @return [Boolean]
+    def concurrent?
+      self.class.concurrent?
+    end
+    
+    # For custom partition strategy, tasks can override this method
+    # to define their own partitioning logic
+    #
+    # @param workers [Integer] number of workers to create partitions for
+    # @return [Array<Hash>] array of partition definitions
+    def create_custom_partitions(workers:)
+      raise NotImplementedError, "Tasks using custom partition strategy must implement create_custom_partitions"
     end
 
     # Default enumerator builder. You may override this method to return any
