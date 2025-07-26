@@ -12,6 +12,9 @@ require "maintenance_tasks/engine"
 # application's code and the engine-specific code. Top-level engine constants
 # and variables are defined under this module.
 module MaintenanceTasks
+  # Exception raised when concurrent execution is not supported for a task.
+  class UnsupportedConcurrencyError < StandardError; end
+
   # @!attribute tasks_module
   #   @scope class
   #
