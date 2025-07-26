@@ -36,7 +36,7 @@ module MaintenanceTasks
       enumerator_builder = self.enumerator_builder
       @collection_enum = @task.enumerator_builder(cursor: cursor)
 
-      @collection_enum ||= case (collection = @task.collection)
+      @collection_enum ||= case (collection = partitioned_collection)
       when :no_collection
         enumerator_builder.build_once_enumerator(cursor: nil)
       when ActiveRecord::Relation
@@ -212,6 +212,24 @@ module MaintenanceTasks
 
       time_since_last_reload = Time.now - @last_status_reload
       time_since_last_reload >= @task.status_reload_frequency
+    end
+
+    # Returns the collection, potentially partitioned for concurrent execution.
+    # For child runs, applies the start_cursor and end_cursor constraints.
+    def partitioned_collection
+      collection = @task.collection
+
+      # For child runs (concurrent execution), partition the collection
+      if @run.child_run? && collection.is_a?(ActiveRecord::Relation)
+        primary_key = collection.klass.primary_key
+        collection = collection.where(primary_key => @run.start_cursor..@run.end_cursor)
+      elsif @run.child_run? && collection.is_a?(ActiveRecord::Batches::BatchEnumerator)
+        primary_key = collection.relation.klass.primary_key
+        partitioned_relation = collection.relation.where(primary_key => @run.start_cursor..@run.end_cursor)
+        collection = partitioned_relation.in_batches(of: collection.batch_size)
+      end
+
+      collection
     end
   end
 end
