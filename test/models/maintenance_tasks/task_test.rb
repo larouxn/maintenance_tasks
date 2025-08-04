@@ -131,5 +131,107 @@ module MaintenanceTasks
     ensure
       Maintenance::TestTask.status_reload_frequency = original_reload_frequency
     end
+
+    test ".concurrent validates and sets concurrency_level" do
+      original_concurrency_level = Maintenance::TestTask.concurrency_level
+
+      # Default level
+      Maintenance::TestTask.concurrent
+      assert_equal(2, Maintenance::TestTask.concurrency_level)
+
+      # Custom valid level
+      Maintenance::TestTask.concurrent(4)
+      assert_equal(4, Maintenance::TestTask.concurrency_level)
+
+      # Maximum valid level
+      Maintenance::TestTask.concurrent(8)
+      assert_equal(8, Maintenance::TestTask.concurrency_level)
+    ensure
+      Maintenance::TestTask.concurrency_level = original_concurrency_level
+    end
+
+    test ".concurrent raises ArgumentError for invalid concurrency levels" do
+      original_concurrency_level = Maintenance::TestTask.concurrency_level
+
+      # Too low level
+      error = assert_raises(ArgumentError) do
+        Maintenance::TestTask.concurrent(1)
+      end
+      assert_equal("Concurrency level must be an integer between 2 and 8", error.message)
+
+      # Too high level
+      error = assert_raises(ArgumentError) do
+        Maintenance::TestTask.concurrent(9)
+      end
+      assert_equal("Concurrency level must be an integer between 2 and 8", error.message)
+
+      # Non-integer level
+      error = assert_raises(ArgumentError) do
+        Maintenance::TestTask.concurrent("4")
+      end
+      assert_equal("Concurrency level must be an integer between 2 and 8", error.message)
+
+      # Float level
+      error = assert_raises(ArgumentError) do
+        Maintenance::TestTask.concurrent(3.5)
+      end
+      assert_equal("Concurrency level must be an integer between 2 and 8", error.message)
+    ensure
+      Maintenance::TestTask.concurrency_level = original_concurrency_level
+    end
+
+    test ".concurrent? returns true when concurrency_level is set and greater than 1" do
+      original_concurrency_level = Maintenance::TestTask.concurrency_level
+
+      # Default state - no concurrency
+      Maintenance::TestTask.concurrency_level = nil
+      refute_predicate(Maintenance::TestTask, :concurrent?)
+
+      # Level 1 - not concurrent
+      Maintenance::TestTask.concurrency_level = 1
+      refute_predicate(Maintenance::TestTask, :concurrent?)
+
+      # Level 2 - concurrent (default)
+      Maintenance::TestTask.concurrency_level = 2
+      assert_predicate(Maintenance::TestTask, :concurrent?)
+
+      # Higher level - concurrent (custom)
+      Maintenance::TestTask.concurrency_level = 4
+      assert_predicate(Maintenance::TestTask, :concurrent?)
+    ensure
+      Maintenance::TestTask.concurrency_level = original_concurrency_level
+    end
+
+    test "#concurrent? delegates to class method" do
+      original_concurrency_level = Maintenance::TestTask.concurrency_level
+      task = Maintenance::TestTask.new
+
+      Maintenance::TestTask.concurrency_level = nil
+      refute_predicate(task, :concurrent?)
+
+      Maintenance::TestTask.concurrency_level = 3
+      assert_predicate(task, :concurrent?)
+    ensure
+      Maintenance::TestTask.concurrency_level = original_concurrency_level
+    end
+
+    test ".concurrency_level defaults to nil" do
+      assert_nil(Task.concurrency_level)
+    end
+
+    test ".concurrency_level inherits value from superclass" do
+      assert_nil(Maintenance::TestTask.concurrency_level)
+
+      original_concurrency_level = Maintenance::TestTask.concurrency_level
+
+      Maintenance::TestTask.concurrent(3)
+
+      assert_equal(3, Maintenance::TestTask.concurrency_level)
+
+      task = Maintenance::TestTask.new
+      assert_equal(3, task.class.concurrency_level)
+    ensure
+      Maintenance::TestTask.concurrency_level = original_concurrency_level
+    end
   end
 end

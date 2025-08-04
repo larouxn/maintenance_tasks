@@ -39,6 +39,12 @@ module MaintenanceTasks
     # @api private
     class_attribute :status_reload_frequency, default: MaintenanceTasks.status_reload_frequency
 
+    # The concurrency level for parallel execution.
+    # When set, the task will run with the specified number of parallel jobs.
+    #
+    # @api private
+    class_attribute :concurrency_level, default: nil
+
     define_callbacks :start, :complete, :error, :cancel, :pause, :interrupt
 
     attr_accessor :metadata
@@ -182,6 +188,26 @@ module MaintenanceTasks
         self.status_reload_frequency = frequency
       end
 
+      # Configure the task to run with the specified level of concurrency.
+      # When enabled, the task will be split into parallel partitions and executed concurrently.
+      #
+      # @param level [Integer] the number of parallel jobs to run (default: 2).
+      #   Must be between 2 and 8.
+      def concurrent(level = 2)
+        unless level.is_a?(Integer) && level.between?(2, 8)
+          raise ArgumentError, "Concurrency level must be an integer between 2 and 8"
+        end
+
+        self.concurrency_level = level
+      end
+
+      # Returns whether the task is configured for concurrent execution.
+      #
+      # @return [Boolean] whether the task runs concurrently.
+      def concurrent?
+        concurrency_level.present? && concurrency_level > 1
+      end
+
       # Initialize a callback to run after the task starts.
       #
       # @param filter_list apply filters to the callback
@@ -319,6 +345,13 @@ module MaintenanceTasks
     # @return [Integer, nil]
     def count
       self.class.collection_builder_strategy.count(self)
+    end
+
+    # Returns whether the Task is configured for concurrent execution.
+    #
+    # @return [Boolean] whether the Task runs concurrently.
+    def concurrent?
+      self.class.concurrent?
     end
 
     # Default enumerator builder. You may override this method to return any
