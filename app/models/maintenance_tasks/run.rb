@@ -50,6 +50,11 @@ module MaintenanceTasks
 
     scope :active, -> { where(status: ACTIVE_STATUSES) }
     scope :completed, -> { where(status: COMPLETED_STATUSES) }
+    scope :parent_runs, -> { where(parent_run_id: nil).where.not(concurrency_level: nil) }
+    scope :child_runs, -> { where.not(parent_run_id: nil) }
+
+    belongs_to :parent_run, class_name: "MaintenanceTasks::Run", optional: true
+    has_many :child_runs, class_name: "MaintenanceTasks::Run", foreign_key: :parent_run_id, dependent: :destroy
 
     # Ensure ActiveStorage is in use before preloading the attachments
     scope :with_attached_csv, -> do
@@ -220,6 +225,69 @@ module MaintenanceTasks
     # @return [Boolean] whether the Run is active.
     def active?
       ACTIVE_STATUSES.include?(status.to_sym)
+    end
+
+    # Returns whether this is a parent run that coordinates child runs.
+    #
+    # @return [Boolean] whether this is a parent run.
+    def parent_run?
+      parent_run_id.nil? && concurrency_level.present?
+    end
+
+    # Returns whether this is a child run that processes a partition.
+    #
+    # @return [Boolean] whether this is a child run.
+    def child_run?
+      parent_run_id.present?
+    end
+
+    # Returns whether this run uses concurrent execution.
+    #
+    # @return [Boolean] whether this run is concurrent.
+    def concurrent?
+      parent_run? || child_run?
+    end
+
+    # Returns the total progress across all child runs for a parent run,
+    # or the individual progress for a non-concurrent run.
+    #
+    # @return [Hash] containing tick_count and tick_total aggregated values.
+    def aggregate_progress
+      if parent_run?
+        child_runs.sum(:tick_count)
+      else
+        tick_count
+      end
+    end
+
+    # Returns the total tick count across all child runs for a parent run.
+    #
+    # @return [Integer] total tick count.
+    def aggregate_tick_total
+      if parent_run?
+        child_runs.sum(:tick_total) || 0
+      else
+        tick_total || 0
+      end
+    end
+
+    # Returns the overall status for a parent run based on child run statuses.
+    # For non-concurrent runs, returns the run's own status.
+    #
+    # @return [Symbol] the overall status.
+    def overall_status
+      return status.to_sym unless parent_run?
+
+      child_statuses = child_runs.pluck(:status).map(&:to_sym)
+      return :enqueued if child_statuses.empty?
+      return :succeeded if child_statuses.all? { |s| s == :succeeded }
+      return :errored if child_statuses.any? { |s| s == :errored }
+      return :cancelled if child_statuses.any? { |s| s == :cancelled }
+      return :running if child_statuses.any? { |s| [:running, :enqueued].include?(s) }
+      return :paused if child_statuses.all? { |s| [:paused, :succeeded].include?(s) }
+      return :interrupted if child_statuses.any? { |s| s == :interrupted }
+
+      status.to_sym
     end
 
     # Returns the duration left for the Run to finish based on the number of

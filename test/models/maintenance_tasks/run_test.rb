@@ -725,6 +725,350 @@ module MaintenanceTasks
         (Run::ACTIVE_STATUSES + Run::COMPLETED_STATUSES).sort
     end
 
+    test "#parent_run? returns true when run has concurrency_level but no parent_run_id" do
+      run = Run.new(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 4,
+        parent_run_id: nil,
+      )
+      assert_predicate run, :parent_run?
+    end
+
+    test "#parent_run? returns false when run has no concurrency_level" do
+      run = Run.new(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: nil,
+      )
+      refute_predicate run, :parent_run?
+    end
+
+    test "#parent_run? returns false when run has parent_run_id" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 4,
+      )
+      child_run = Run.new(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+      refute_predicate child_run, :parent_run?
+    end
+
+    test "#child_run? returns true when run has parent_run_id" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 4,
+      )
+      child_run = Run.new(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+      assert_predicate child_run, :child_run?
+    end
+
+    test "#child_run? returns false when run has no parent_run_id" do
+      run = Run.new(task_name: "Maintenance::UpdatePostsTask")
+      refute_predicate run, :child_run?
+    end
+
+    test "#concurrent? returns true for parent runs" do
+      run = Run.new(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 4,
+      )
+      assert_predicate run, :concurrent?
+    end
+
+    test "#concurrent? returns true for child runs" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 4,
+      )
+      child_run = Run.new(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+      assert_predicate child_run, :concurrent?
+    end
+
+    test "#concurrent? returns false for regular runs" do
+      run = Run.new(task_name: "Maintenance::UpdatePostsTask")
+      refute_predicate run, :concurrent?
+    end
+
+    test "#aggregate_progress returns child runs tick_count sum for parent runs" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        tick_count: 10,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        tick_count: 15,
+      )
+
+      assert_equal 25, parent_run.aggregate_progress
+    end
+
+    test "#aggregate_progress returns own tick_count for non-parent runs" do
+      run = Run.new(
+        task_name: "Maintenance::UpdatePostsTask",
+        tick_count: 42,
+      )
+      assert_equal 42, run.aggregate_progress
+    end
+
+    test "#aggregate_tick_total returns child runs tick_total sum for parent runs" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        tick_total: 100,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        tick_total: 150,
+      )
+
+      assert_equal 250, parent_run.aggregate_tick_total
+    end
+
+    test "#aggregate_tick_total returns own tick_total for non-parent runs" do
+      run = Run.new(
+        task_name: "Maintenance::UpdatePostsTask",
+        tick_total: 100,
+      )
+      assert_equal 100, run.aggregate_tick_total
+    end
+
+    test "#aggregate_tick_total returns 0 when tick_total is nil" do
+      run = Run.new(task_name: "Maintenance::UpdatePostsTask")
+      assert_equal 0, run.aggregate_tick_total
+    end
+
+    test "#overall_status returns own status for non-parent runs" do
+      run = Run.new(
+        task_name: "Maintenance::UpdatePostsTask",
+        status: :running,
+      )
+      assert_equal :running, run.overall_status
+    end
+
+    test "#overall_status returns enqueued when parent run has no child runs" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      assert_equal :enqueued, parent_run.overall_status
+    end
+
+    test "#overall_status returns succeeded when all child runs succeeded" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :succeeded,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :succeeded,
+      )
+
+      assert_equal :succeeded, parent_run.overall_status
+    end
+
+    test "#overall_status returns errored when any child run errored" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :succeeded,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :errored,
+      )
+
+      assert_equal :errored, parent_run.overall_status
+    end
+
+    test "#overall_status returns cancelled when any child run cancelled" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :succeeded,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :cancelled,
+      )
+
+      assert_equal :cancelled, parent_run.overall_status
+    end
+
+    test "#overall_status returns running when any child run is running or enqueued" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :succeeded,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :running,
+      )
+
+      assert_equal :running, parent_run.overall_status
+    end
+
+    test "#overall_status returns paused when all child runs are paused or succeeded" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :paused,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :succeeded,
+      )
+
+      assert_equal :paused, parent_run.overall_status
+    end
+
+    test "#overall_status returns interrupted when any child run interrupted" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :paused,
+      )
+      Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+        status: :interrupted,
+      )
+
+      assert_equal :interrupted, parent_run.overall_status
+    end
+
+    test "parent_run association works correctly" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      child_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+
+      assert_equal parent_run, child_run.parent_run
+    end
+
+    test "child_runs association works correctly" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      child1 = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+      child2 = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+
+      assert_equal [child1, child2], parent_run.child_runs.to_a
+    end
+
+    test "child_runs are destroyed when parent_run is destroyed" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      child1 = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+      child2 = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+
+      parent_run.destroy!
+
+      refute Run.exists?(child1.id)
+      refute Run.exists?(child2.id)
+    end
+
+    test "parent_runs scope returns only runs without parent_run_id" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      regular_run = Run.create!(task_name: "Maintenance::UpdatePostsTask")
+      child_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+
+      parent_runs = Run.parent_runs.to_a
+      assert_includes parent_runs, parent_run
+      refute_includes parent_runs, regular_run
+      refute_includes parent_runs, child_run
+    end
+
+    test "child_runs scope returns only runs with parent_run_id" do
+      parent_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        concurrency_level: 2,
+      )
+      regular_run = Run.create!(task_name: "Maintenance::UpdatePostsTask")
+      child_run = Run.create!(
+        task_name: "Maintenance::UpdatePostsTask",
+        parent_run_id: parent_run.id,
+      )
+
+      child_runs = Run.child_runs.to_a
+      refute_includes child_runs, parent_run
+      refute_includes child_runs, regular_run
+      assert_includes child_runs, child_run
+    end
+
     private
 
     def expected_notification(run)

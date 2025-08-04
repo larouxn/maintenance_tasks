@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2023_06_22_035229) do
+ActiveRecord::Schema.define(version: 2025_08_04_212018) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.string "name", null: false
     t.string "record_type", null: false
@@ -57,6 +57,12 @@ ActiveRecord::Schema.define(version: 2023_06_22_035229) do
     t.text "arguments"
     t.integer "lock_version", default: 0, null: false
     t.text "metadata"
+    t.bigint "parent_run_id"
+    t.integer "concurrency_level"
+    t.string "end_cursor"
+    t.integer "partition_index"
+    t.index ["parent_run_id", "partition_index"], name: "index_mt_runs_on_parent_run_id_and_partition_index", unique: true
+    t.index ["parent_run_id"], name: "index_maintenance_tasks_runs_on_parent_run_id"
     t.index ["task_name", "status", "created_at"], name: "index_maintenance_tasks_runs", order: { created_at: :desc }
   end
 
@@ -69,4 +75,5 @@ ActiveRecord::Schema.define(version: 2023_06_22_035229) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "maintenance_tasks_runs", "maintenance_tasks_runs", column: "parent_run_id", on_delete: :cascade
 end
