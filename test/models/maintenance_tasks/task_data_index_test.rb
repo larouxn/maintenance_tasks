@@ -6,10 +6,12 @@ module MaintenanceTasks
   class TaskDataIndexTest < ActiveSupport::TestCase
     test ".available_tasks returns a list of Tasks as TaskDataShow, ordered alphabetically by name" do
       expected = [
+        "Maintenance::ArrayCollectionTask",
         "Maintenance::BatchImportPostsTask",
         "Maintenance::CallbackTestTask",
         "Maintenance::CancelledEnqueueTask",
         "Maintenance::ConcurrentUpdatePostsTask",
+        "Maintenance::CsvCollectionTask",
         "Maintenance::CustomEnumeratingTask",
         "Maintenance::EnqueueErrorTask",
         "Maintenance::ErrorTask",

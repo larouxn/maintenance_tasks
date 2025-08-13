@@ -6,10 +6,12 @@ module MaintenanceTasks
   class TaskTest < ActiveSupport::TestCase
     test ".load_all returns list of tasks that inherit from the Task superclass" do
       expected = [
+        "Maintenance::ArrayCollectionTask",
         "Maintenance::BatchImportPostsTask",
         "Maintenance::CallbackTestTask",
         "Maintenance::CancelledEnqueueTask",
         "Maintenance::ConcurrentUpdatePostsTask",
+        "Maintenance::CsvCollectionTask",
         "Maintenance::CustomEnumeratingTask",
         "Maintenance::EnqueueErrorTask",
         "Maintenance::ErrorTask",
