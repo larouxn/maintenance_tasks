@@ -40,20 +40,28 @@ module MaintenanceTasks
     # @raise [ActiveRecord::ValueTooLong] if the creation of the Run fails due
     #   to a value being too long for the column type.
     def run(name:, csv_file: nil, arguments: {}, run_model: Run, metadata: nil)
-      task = Task.named(name)
-
-      if task.concurrent?
-        return ConcurrentRunner.run_concurrent(
-          name: name,
-          concurrency_level: task.concurrency_level,
-          csv_file: csv_file,
-          arguments: arguments,
-          run_model: run_model,
-          metadata: metadata,
-        )
-      end
-
       run = run_model.new(task_name: name, arguments: arguments, metadata: metadata)
+
+      # TODO: Can we meld concurrent running into Run?
+      # Escape hatching into ConcurrentRunner feels incorrect.
+
+      # Check if the task exists and supports concurrency after creating the run
+      # This preserves the original error handling behavior for invalid task names
+      begin
+        task = Task.named(name)
+        if task.concurrent?
+          return ConcurrentRunner.run_concurrent(
+            name: name,
+            concurrency_level: task.concurrency_level,
+            csv_file: csv_file,
+            arguments: arguments,
+            run_model: run_model,
+            metadata: metadata,
+          )
+        end
+      rescue Task::NotFoundError
+        # Let the run validation handle this error naturally
+      end
       if csv_file
         run.csv_file.attach(csv_file)
         run.csv_file.filename = filename(name)
@@ -63,7 +71,7 @@ module MaintenanceTasks
       yield run if block_given?
       run.enqueued!
       enqueue(run, job)
-      task
+      Task.named(name)
     end
 
     # Resumes a Task.
