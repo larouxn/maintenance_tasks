@@ -161,6 +161,44 @@ module MaintenanceTasks
         run.csv_file.filename.to_s
     end
 
+    test "#run delegates to ConcurrentRunner with all parameters when task is concurrent" do
+      concurrent_task_name = "Maintenance::ConcurrentUpdatePostsTask"
+      arguments = { param1: "value1" }
+      metadata = { key: "value" }
+      mock_parent_run = mock("parent_run")
+
+      ConcurrentRunner.expects(:run_concurrent).with(
+        name: concurrent_task_name,
+        concurrency_level: 4,
+        csv_file: @csv,
+        arguments: arguments,
+        run_model: Run,
+        metadata: metadata,
+      ).returns(mock_parent_run)
+
+      result = @runner.run(
+        name: concurrent_task_name,
+        csv_file: @csv,
+        arguments: arguments,
+        metadata: metadata,
+      )
+
+      assert_equal mock_parent_run, result
+    end
+
+    test "#run does not delegate to ConcurrentRunner when task is not concurrent" do
+      non_concurrent_task_name = "Maintenance::UpdatePostsTask"
+
+      assert_difference -> { Run.where(task_name: non_concurrent_task_name).count }, 1 do
+        assert_enqueued_with(job: @job) do
+          result = @runner.run(name: non_concurrent_task_name)
+
+          assert_equal Maintenance::UpdatePostsTask, result
+          assert_kind_of Class, result
+        end
+      end
+    end
+
     private
 
     def csv_io

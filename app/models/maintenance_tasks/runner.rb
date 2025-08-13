@@ -40,6 +40,19 @@ module MaintenanceTasks
     # @raise [ActiveRecord::ValueTooLong] if the creation of the Run fails due
     #   to a value being too long for the column type.
     def run(name:, csv_file: nil, arguments: {}, run_model: Run, metadata: nil)
+      task = Task.named(name)
+
+      if task.concurrent?
+        return ConcurrentRunner.run_concurrent(
+          name: name,
+          concurrency_level: task.concurrency_level,
+          csv_file: csv_file,
+          arguments: arguments,
+          run_model: run_model,
+          metadata: metadata,
+        )
+      end
+
       run = run_model.new(task_name: name, arguments: arguments, metadata: metadata)
       if csv_file
         run.csv_file.attach(csv_file)
@@ -50,7 +63,7 @@ module MaintenanceTasks
       yield run if block_given?
       run.enqueued!
       enqueue(run, job)
-      Task.named(name)
+      task
     end
 
     # Resumes a Task.
