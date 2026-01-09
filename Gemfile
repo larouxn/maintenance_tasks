@@ -24,12 +24,12 @@ gem "yard"
 group :test do
   gem "capybara"
   gem "capybara-lockstep"
-  if @minitest_gem_requirement
-    gem "minitest", @minitest_gem_requirement
+  if !@minitest_gem_requirement
+    gem "minitest"
   else
     # causes Dependabot to ignore the next line and update the previous gem "minitest"
     minitest = "minitest"
-    gem minitest
+    gem minitest, @minitest_gem_requirement
   end
   gem "mocha"
   gem "selenium-webdriver"
