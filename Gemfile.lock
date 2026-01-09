@@ -331,7 +331,7 @@ DEPENDENCIES
   capybara-lockstep
   debug
   maintenance_tasks!
-  minitest (~> 6.0)
+  minitest
   mocha
   puma
   rails (>= 7.1)

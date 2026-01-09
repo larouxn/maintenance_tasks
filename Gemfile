@@ -24,17 +24,12 @@ gem "yard"
 group :test do
   gem "capybara"
   gem "capybara-lockstep"
-  # Rails main and 8.1.2 onward require Minitest 6.
-  # Rails 8.0, 7.2, and 7.1 lack support for Minitest 6.
-  # TODO: Remove Rails 8.0 from unspported group once a release with the following is cut.
-  # https://github.com/rails/rails/commit/ec62932ee7d31e0ef870e61c2d7de2c3efe3faa6
-  if @rails_gem_requirement.is_a?(String) &&
-      @rails_gem_requirement.start_with?("~> 7.1", "~> 7.2", "~> 8.0")
-    gem "minitest", "< 6"
+  if @minitest_gem_requirement
+    gem "minitest", @minitest_gem_requirement
   else
     # causes Dependabot to ignore the next line and update the previous gem "minitest"
     minitest = "minitest"
-    gem minitest, "~> 6.0"
+    gem minitest
   end
   gem "mocha"
   gem "selenium-webdriver"
